@@ -1,0 +1,63 @@
+name: Build Telegram Bot API (Linux ARM64)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-arm64.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on Ubuntu ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git gperf zlib1g-dev libssl-dev
+
+      - name: Clone Telegram Bot API source
+        run: |
+          git clone --recursive https://github.com/tdlib/telegram-bot-api.git telegram-bot-api
+          cd telegram-bot-api
+          git submodule update --init --recursive
+
+      - name: Build Telegram Bot API
+        run: |
+          cd telegram-bot-api
+          mkdir build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --target telegram-bot-api --parallel 4
+
+      - name: Verify binary
+        run: |
+          file telegram-bot-api/build/telegram-bot-api
+          readelf -h telegram-bot-api/build/telegram-bot-api | grep -E 'Class:|Machine:'
+          ldd telegram-bot-api/build/telegram-bot-api || true
+          ./telegram-bot-api/build/telegram-bot-api --version || true
+
+      - name: Package binary
+        run: |
+          mkdir -p package
+          cp telegram-bot-api/build/telegram-bot-api package/
+          cp telegram-bot-api/LICENSE_1_0.txt package/ 2>/dev/null || true
+          tar -czf telegram-bot-api-linux-arm64.tar.gz -C package .
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-bot-api-linux-arm64
+          path: telegram-bot-api-linux-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
